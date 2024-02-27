@@ -1,0 +1,157 @@
+---
+  - name: haproxy server configuration
+    hosts: localhost
+    become: true
+    tasks:
+      - name: setting up static hostname
+        hostname:
+             name: haproxy-server
+             use: systemd
+      - name: make entries in /etc/hosts
+        blockinfile:
+              dest: /etc/hosts
+              block: |
+                 192.168.1.93 haproxy-server
+                 192.168.1.90 node1
+                 192.168.1.92 node2
+              insertafter: EOF
+      - name: install haproxy
+        dnf:
+          name: haproxy
+          state: latest
+      - name: copying haproxy.cfg file
+        template:
+            src: haproxy.cfg.j2
+            dest: /etc/haproxy/haproxy.cfg
+            force: true
+      - name: making changes rsyslog
+        replace:
+            dest: /etc/rsyslog.conf
+            regexp: '^#module(load="imudp")'
+            replace: 'module(load="imudp")'
+      - name: making changes in rsyslog
+        replace:
+           dest: /etc/rsyslog.conf
+           regexp: '^#input(type="imudp" port="514")'
+           replace: 'input(type="imudp" port="514")'
+      - name: creating haproxy for rsyslog
+        copy:
+          dest: "/etc/rsyslog.d/haproxy.conf"
+          content: |
+                local2.=info /var/log/haproxy-access.log
+                local2.notice /var/log/haproxy-info.log
+      - name: restarting and enabling rsyslog
+        service:
+            name: rsyslog
+            state: restarted
+            enabled: yes
+      - name: turning on the haproxy
+        command: setsebool -P haproxy_connect_any 1
+      - name: allowing traffic in firewall
+        firewalld:
+             service: http
+             zone: public
+             permanent: true
+             immediate: true
+             state: enabled
+      - name: starting and enabling haproxy
+        service:
+           name: haproxy
+           state: started
+           enabled: yes
+
+
+  - hosts: data
+    become: true
+    tasks:
+     - name: setting up hostname
+       hostname:
+          name: node1
+          use: systemd
+     - name: making entries
+       blockinfile:
+            dest: /etc/hosts
+            block: |
+                192.168.1.93 haproxy-server
+                192.168.1.90 node1
+                192.168.1.92 node2
+            insertafter: EOF
+     - name: installing nginx package
+       dnf:
+        name: nginx
+        state: latest
+     - name: copying the image file to nginx
+       copy:
+        src: /root/Downloads/redhat.png
+        dest: /usr/share/nginx/html/redhat.png
+     - name: creating index.html
+       copy:
+        dest: "/usr/share/nginx/html/index.html"
+        content: |
+            <img src="/redhat.png" width="500" height="500" />
+            <h1>HEYYYY HEYYYY WELLCOME TO REDHAT</h1>
+            <i>this page is hosted on node2 machine using nginx</i>
+     - name: allowing http traffic
+       firewalld:
+            service: http
+            zone: public
+            permanent: true
+            immediate: true
+            state: enabled
+     - name: starting nginx
+       service:
+          name: nginx
+          state: started
+          enabled: yes
+      - name: assign ip address
+        command: nmcli con mod enp0s3 ipv4.address 192.168.1.92/24
+
+
+
+  - hosts: var
+    become: true
+    tasks:
+    - name: setting up hostname
+      hostname:
+          name: node2
+          use: systemd
+    - name: making entries
+      blockinfile:
+           dest: /etc/hosts
+           block: |
+              192.168.1.93 haproxy-server
+              192.168.1.90 node1
+              192.168.1.92 node2
+           insertafter: EOF
+    - name: install nginx
+      dnf:
+        name: nginx
+        state: latest
+    - name: copy image file
+      copy:
+       src: /root/Downloads/redhat.png
+       dest: /usr/share/nginx/html/redhat.png
+    - name: create index.html
+      copy:
+        dest: "/usr/share/nginx/html/index.html"
+        content: |
+             <img src="/redhat.png" width="500" height="500"/>
+             <h1>hello wellcome to redhat page</h1>
+             <i>this is my first proxy server***NGINX****</i>
+    - name: allow http traffic
+      firewalld:
+         service: http
+         zone: public
+         permanent: true
+         immediate: true
+         state: enabled
+    - name: start nginx
+      service:
+          name: nginx
+          state: started
+          enabled: yes
+    - name: assign ip address 
+      command: nmcli con mod enp0s3 ipv4.address 192.168.1.55/24
+
+
+                   
